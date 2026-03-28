@@ -1,0 +1,53 @@
+{
+  "entities": {
+    "Question": {
+      "title": "Question",
+      "description": "A single question in an HSK exam",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["MCQ", "Writing", "Listening"] },
+        "section": { "type": "string", "enum": ["Listening", "Reading", "Writing"] },
+        "text": { "type": "string" },
+        "imageUrl": { "type": "string", "description": "Base64 or URL of the main image" },
+        "options": { "type": "array", "items": { "type": "string" } },
+        "optionImages": { "type": "array", "items": { "type": "string" } },
+        "audioUrl": { "type": "string", "description": "Base64 or URL of the audio file" },
+        "correctAnswer": { "type": "string" },
+        "maxMarks": { "type": "integer" }
+      },
+      "required": ["id", "type", "section", "text", "maxMarks"]
+    },
+    "HSKExam": {
+      "title": "HSK Exam",
+      "description": "A custom HSK exam created by an admin",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "level": { "type": "integer", "enum": [1, 2, 3, 4, 5, 6] },
+        "duration": { "type": "integer" },
+        "sectionDurations": { "type": "object" },
+        "totalMarks": { "type": "integer" },
+        "questions": { "type": "array", "items": { "$ref": "Question" } },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "level", "duration", "questions"]
+    }
+  },
+  "firestore": {
+    "/hsk_exams/{examId}": {
+      "schema": "HSKExam",
+      "description": "Collection of custom HSK exams"
+    },
+    "/settings/admin": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string" }
+        }
+      },
+      "description": "Global admin settings"
+    }
+  }
+}
