@@ -6,48 +6,103 @@
       "type": "object",
       "properties": {
         "id": { "type": "string" },
-        "type": { "type": "string", "enum": ["MCQ", "Writing", "Listening"] },
+        "type": { "type": "string", "enum": ["MCQ", "Writing", "Listening", "True/False"] },
         "section": { "type": "string", "enum": ["Listening", "Reading", "Writing"] },
+        "level": { "type": "integer" },
         "text": { "type": "string" },
-        "imageUrl": { "type": "string", "description": "Base64 or URL of the main image" },
+        "imageUrl": { "type": "string" },
         "options": { "type": "array", "items": { "type": "string" } },
         "optionImages": { "type": "array", "items": { "type": "string" } },
-        "audioUrl": { "type": "string", "description": "Base64 or URL of the audio file" },
+        "audioUrl": { "type": "string" },
         "correctAnswer": { "type": "string" },
-        "maxMarks": { "type": "integer" }
+        "modelAnswer": { "type": "string" },
+        "aiEvaluated": { "type": "boolean" },
+        "audioScript": { "type": "string" },
+        "maxMarks": { "type": "integer" },
+        "partType": { "type": "string" },
+        "passageId": { "type": "string" },
+        "blanks": { "type": "array", "items": { "type": "object" } },
+        "errorSentence": { "type": "string" },
+        "optionPool": { "type": "array", "items": { "type": "string" } },
+        "blankMapping": { "type": "object" }
       },
       "required": ["id", "type", "section", "text", "maxMarks"]
     },
-    "HSKExam": {
-      "title": "HSK Exam",
-      "description": "A custom HSK exam created by an admin",
+    "Exam": {
+      "title": "Exam",
+      "description": "An HSK exam",
       "type": "object",
       "properties": {
+        "id": { "type": "string" },
         "name": { "type": "string" },
-        "level": { "type": "integer", "enum": [1, 2, 3, 4, 5, 6] },
+        "level": { "type": "integer" },
         "duration": { "type": "integer" },
         "sectionDurations": { "type": "object" },
         "totalMarks": { "type": "integer" },
         "questions": { "type": "array", "items": { "$ref": "Question" } },
+        "type": { "type": "string", "enum": ["mock", "practice", "real"] },
+        "isInstant": { "type": "boolean" },
         "createdBy": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "scheduledTime": { "type": "integer" },
+        "createdAt": { "type": "integer" }
       },
-      "required": ["name", "level", "duration", "questions"]
+      "required": ["id", "name", "duration", "questions"]
+    },
+    "ExamResult": {
+      "title": "Exam Result",
+      "description": "A user's exam result",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "examId": { "type": "string" },
+        "examName": { "type": "string" },
+        "level": { "type": "integer" },
+        "score": { "type": "number" },
+        "sectionScores": { "type": "object" },
+        "totalMarks": { "type": "integer" },
+        "passed": { "type": "boolean" },
+        "date": { "type": "integer" },
+        "answers": { "type": "object" },
+        "feedback": { "type": "object" }
+      },
+      "required": ["id", "userId", "examId", "score", "passed", "date"]
+    },
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "A user's profile and settings",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "isAdmin": { "type": "boolean" },
+        "createdAt": { "type": "integer" }
+      },
+      "required": ["userId", "email", "isAdmin"]
     }
   },
   "firestore": {
-    "/hsk_exams/{examId}": {
-      "schema": "HSKExam",
+    "/hsk_banks/{examId}": {
+      "schema": "Exam",
       "description": "Collection of custom HSK exams"
     },
-    "/settings/admin": {
+    "/results/{resultId}": {
+      "schema": "ExamResult",
+      "description": "Collection of user exam results"
+    },
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Collection of user profiles"
+    },
+    "/analytics/global": {
       "schema": {
         "type": "object",
         "properties": {
-          "email": { "type": "string" }
+          "visitCount": { "type": "integer" }
         }
       },
-      "description": "Global admin settings"
+      "description": "Global analytics"
     }
   }
 }

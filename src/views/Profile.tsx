@@ -14,7 +14,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout }) => {
 
   useEffect(() => {
     const fetchResults = async () => {
-      if (user) {
+      if (user?.uid) {
         const res = await getUserResults(user.uid);
         setResults(res.sort((a, b) => b.date - a.date));
       }
@@ -22,7 +22,21 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout }) => {
     fetchResults();
   }, [user]);
 
-  const isAdmin = user.email === 'admin@example.com' || user.email === 'mdtafim77889@gmail.com';
+  const ADMIN_EMAILS = [
+    'mdtafim77889@gmail.com',
+    'tafim160@gmail.com',
+    'tafimgood@gmail.com'
+  ];
+  const isAdmin = user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase());
+
+  const getInitials = (name: string) => {
+    if (!name) return 'US';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      return (parts[0][0] + (parts[1][0] || '')).toUpperCase();
+    }
+    return name.trim().slice(0, 2).toUpperCase();
+  };
 
   return (
     <div className="space-y-8 max-w-5xl mx-auto">
@@ -31,15 +45,21 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout }) => {
           <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-32 -mt-32"></div>
           <div className="absolute -bottom-16 left-12 flex items-end gap-8">
             <div className="relative">
-              <img
-                src={user?.photoURL || `https://ui-avatars.com/api/?name=${user?.displayName || 'User'}&background=random&size=256`}
-                alt="Profile"
-                className="w-32 h-32 rounded-3xl object-cover ring-8 ring-white shadow-2xl"
-              />
+              {user?.photoURL ? (
+                <img
+                  src={user.photoURL}
+                  alt="Profile"
+                  className="w-32 h-32 rounded-3xl object-cover ring-8 ring-white shadow-2xl"
+                />
+              ) : (
+                <div className="w-32 h-32 rounded-3xl bg-yellow-200 flex items-center justify-center text-gray-900 font-black text-4xl ring-8 ring-white shadow-2xl">
+                  {getInitials(user?.name || 'User')}
+                </div>
+              )}
               <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-green-500 rounded-full border-4 border-white"></div>
             </div>
             <div className="pb-4">
-              <h1 className="text-3xl font-black text-white tracking-tight">{user?.displayName || 'User'}</h1>
+              <h1 className="text-3xl font-black text-white tracking-tight">{user?.name || 'User'}</h1>
               <div className="flex items-center gap-3 mt-1">
                 <span className="px-3 py-1 bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest rounded-full">Student</span>
                 {isAdmin && (

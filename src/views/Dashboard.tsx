@@ -16,7 +16,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, setActiveTab }) => {
   useEffect(() => {
     const fetchData = async () => {
       if (user) {
-        const res = await getUserResults(user.uid);
+        const res = await getUserResults(user.userId);
         setResults(res);
         const exams = await getInstantExams();
         setInstantExams(exams);
@@ -37,7 +37,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, setActiveTab }) => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Dashboard Overview</h1>
-          <p className="text-gray-500 font-medium mt-1">Welcome back, {user?.displayName || 'User'}! Track your HSK progress here.</p>
+          <p className="text-gray-500 font-medium mt-1">Welcome back, {user?.name || 'User'}! Track your HSK progress here.</p>
         </div>
         <button 
           onClick={() => setActiveTab('exams')}

@@ -1,5 +1,7 @@
 import { Exam, HSKLevel, Question, SectionType } from './types';
 
+export const ADMIN_EMAILS = ['mdtafim77889@gmail.com', 'tafimgood@gmail.com'];
+
 export const HSK_DURATIONS: Record<HSKLevel, number> = {
   1: 35,
   2: 45,
@@ -139,16 +141,3 @@ const createMockQuestions = (level: HSKLevel, testIndex: number): Question[] => 
 };
 
 export const MOCK_HSK_EXAMS: Exam[] = [];
-[1, 2, 3, 4, 5, 6].forEach(level => {
-  for (let i = 1; i <= 5; i++) {
-    MOCK_HSK_EXAMS.push({
-      id: `hsk-${level}-mock-${i}`,
-      name: `HSK Level ${level} Mock Test ${i}`,
-      level: level as HSKLevel,
-      duration: HSK_DURATIONS[level as HSKLevel],
-      sectionDurations: HSK_SECTION_DURATIONS[level as HSKLevel],
-      totalMarks: HSK_TOTAL_MARKS[level as HSKLevel],
-      questions: createMockQuestions(level as HSKLevel, i),
-    });
-  }
-});

@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { GraduationCap, ArrowRight, Clock, BookOpen, CheckCircle, Info, PlayCircle } from 'lucide-react';
-import { HSKLevel, Exam } from '../types';
+import { HSKLevel, Exam, LocalUser } from '../types';
 import { HSK_DURATIONS, HSK_TOTAL_MARKS } from '../constants';
-import { getUserResults } from '../db';
-import { db } from '../firebase';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { onSnapshot, collection, query, where, orderBy } from 'firebase/firestore';
+import { db as firestoreDb } from '../firebase';
+import { getUserResults, handleFirestoreError, OperationType } from '../db';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface ExamsProps {
-  user: any;
+  user: LocalUser;
   onStartExam: (exam: Exam) => void;
 }
 
@@ -19,30 +19,41 @@ export const Exams: React.FC<ExamsProps> = ({ user, onStartExam }) => {
   const [hskExams, setHskExams] = useState<Exam[]>([]);
 
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchResults = async () => {
       if (user) {
-        const results = await getUserResults(user.uid);
-        setCompletedExams(results.map(r => r.examId));
-      }
-      if (selectedLevel) {
-        // Fetch custom exams from Firestore
-        let customExams: Exam[] = [];
         try {
-          const q = query(collection(db, 'hsk_exams'), where('level', '==', selectedLevel));
-          const querySnapshot = await getDocs(q);
-          customExams = querySnapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          } as Exam));
+          const results = await getUserResults(user.userId);
+          setCompletedExams(results.map(r => r.examId));
         } catch (error) {
-          console.error('Error fetching custom exams:', error);
+          console.error('Error fetching results:', error);
         }
-
-        setHskExams(customExams);
       }
     };
-    fetchData();
-  }, [user, selectedLevel]);
+    fetchResults();
+  }, [user]);
+
+  useEffect(() => {
+    if (selectedLevel) {
+      const path = 'hsk_banks';
+      const q = query(
+        collection(firestoreDb, 'hsk_banks'), 
+        where('level', '==', selectedLevel)
+      );
+
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const exams = snapshot.docs.map(doc => doc.data() as Exam);
+        // Filter for mock type if needed, though query handles level
+        const filteredExams = exams.filter(exam => exam.type === 'mock' || !exam.type);
+        setHskExams(filteredExams);
+      }, (error) => {
+        handleFirestoreError(error, OperationType.LIST, path);
+      });
+
+      return () => unsubscribe();
+    } else {
+      setHskExams([]);
+    }
+  }, [selectedLevel]);
 
   const levels: HSKLevel[] = [1, 2, 3, 4, 5, 6];
 
@@ -161,41 +172,57 @@ export const Exams: React.FC<ExamsProps> = ({ user, onStartExam }) => {
             exit={{ opacity: 0, x: -20 }}
             className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
           >
-            {hskExams.map((exam, i) => (
-              <motion.div
-                key={exam.id}
-                whileHover={{ scale: 1.02 }}
-                className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-all group"
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <div className="p-3 bg-blue-50 text-blue-600 rounded-xl font-black text-sm">
-                    #{i + 1}
-                  </div>
-                  {completedExams.includes(exam.id) ? (
-                    <span className="px-3 py-1 bg-green-100 text-green-600 text-[10px] font-black uppercase tracking-widest rounded-full">Completed</span>
-                  ) : (
-                    <span className="px-3 py-1 bg-blue-100 text-blue-600 text-[10px] font-black uppercase tracking-widest rounded-full">New</span>
-                  )}
-                </div>
-                <h4 className="text-lg font-bold text-gray-900 mb-4">{exam.name}</h4>
-                <div className="flex items-center justify-between mb-6">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Duration</span>
-                    <span className="text-sm font-bold text-gray-700">{exam.duration} Minutes</span>
-                  </div>
-                  <div className="flex flex-col text-right">
-                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Questions</span>
-                    <span className="text-sm font-bold text-gray-700">{exam.questions.length} Items</span>
-                  </div>
-                </div>
-                <button 
-                  onClick={() => setSelectedExam(exam)}
-                  className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-100"
+            {hskExams.length > 0 ? (
+              hskExams.map((exam, i) => (
+                <motion.div
+                  key={exam.id}
+                  whileHover={{ scale: 1.02 }}
+                  className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-all group"
                 >
-                  View Instructions
-                </button>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="p-3 bg-blue-50 text-blue-600 rounded-xl font-black text-sm">
+                      #{i + 1}
+                    </div>
+                    {completedExams.includes(exam.id) ? (
+                      <span className="px-3 py-1 bg-green-100 text-green-600 text-[10px] font-black uppercase tracking-widest rounded-full">Completed</span>
+                    ) : (
+                      <span className="px-3 py-1 bg-blue-100 text-blue-600 text-[10px] font-black uppercase tracking-widest rounded-full">New</span>
+                    )}
+                  </div>
+                  <h4 className="text-lg font-bold text-gray-900 mb-4">{exam.name}</h4>
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Duration</span>
+                      <span className="text-sm font-bold text-gray-700">{exam.duration} Minutes</span>
+                    </div>
+                    <div className="flex flex-col text-right">
+                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Questions</span>
+                      <span className="text-sm font-bold text-gray-700">{exam.questions.length} Items</span>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setSelectedExam(exam)}
+                    className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-100"
+                  >
+                    View Instructions
+                  </button>
+                </motion.div>
+              ))
+            ) : (
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="col-span-full py-20 text-center space-y-4"
+              >
+                <div className="w-20 h-20 bg-gray-50 text-gray-300 rounded-full flex items-center justify-center mx-auto">
+                  <BookOpen className="w-10 h-10" />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-xl font-bold text-gray-900">No mock tests available yet.</h3>
+                  <p className="text-gray-500 max-w-sm mx-auto">Check back later for official HSK Level {selectedLevel} mock exams created by our administrators.</p>
+                </div>
               </motion.div>
-            ))}
+            )}
           </motion.div>
         ) : (
           <motion.div

@@ -35,8 +35,11 @@ export interface Exam {
   sectionDurations: Record<SectionType, number>; // duration per section
   totalMarks: number;
   questions: Question[];
+  type?: 'mock' | 'practice' | 'real';
   isInstant?: boolean;
   createdBy?: string; // Admin UID
+  scheduledTime?: number; // Timestamp for when the exam starts
+  isDraft?: boolean;
 }
 
 export interface ExamResult {
@@ -59,5 +62,14 @@ export interface UserProfile {
   displayName: string;
   email: string;
   photoURL?: string;
+  isAdmin: boolean;
+}
+
+export interface LocalUser {
+  userId: string;
+  email: string;
+  passwordHash: string;
+  name?: string;
+  createdAt: number;
   isAdmin: boolean;
 }

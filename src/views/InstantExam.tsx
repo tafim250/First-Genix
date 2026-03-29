@@ -19,18 +19,32 @@ export const InstantExam: React.FC<InstantExamProps> = ({ user, onStartExam }) =
     totalMarks: 100,
     questions: [],
     isInstant: true,
-    createdBy: user.uid,
+    createdBy: user?.uid || '',
+    scheduledTime: undefined,
   });
 
-  const isAdmin = user.email === 'admin@example.com' || user.email === 'mdtafim77889@gmail.com';
+  const ADMIN_EMAILS = [
+    'mdtafim77889@gmail.com',
+    'tafim160@gmail.com',
+    'tafimgood@gmail.com'
+  ];
+  const isAdmin = user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase());
 
   useEffect(() => {
     const fetchExams = async () => {
       const all = await getInstantExams();
       setExams(all);
+      
+      // Auto-start logic for scheduled exams
+      const scheduled = all.find(e => e.scheduledTime && e.scheduledTime <= Date.now() && e.scheduledTime > Date.now() - (e.duration * 60 * 1000));
+      if (scheduled && !isAdmin) {
+        onStartExam(scheduled);
+      }
     };
     fetchExams();
-  }, []);
+    const interval = setInterval(fetchExams, 30000); // Check every 30s
+    return () => clearInterval(interval);
+  }, [isAdmin]);
 
   const addQuestion = () => {
     const q: Question = {
@@ -133,7 +147,7 @@ export const InstantExam: React.FC<InstantExamProps> = ({ user, onStartExam }) =
       totalMarks: 100,
       questions: [],
       isInstant: true,
-      createdBy: user.uid,
+      createdBy: user?.uid || '',
     });
   };
 
@@ -144,7 +158,7 @@ export const InstantExam: React.FC<InstantExamProps> = ({ user, onStartExam }) =
     reader.onload = (event) => {
       try {
         const json = JSON.parse(event.target?.result as string);
-        setNewExam(prev => ({ ...prev, ...json, isInstant: true, createdBy: user.uid }));
+        setNewExam(prev => ({ ...prev, ...json, isInstant: true, createdBy: user?.uid || '' }));
       } catch (err) {
         alert('Invalid JSON file.');
       }
@@ -245,6 +259,14 @@ export const InstantExam: React.FC<InstantExamProps> = ({ user, onStartExam }) =
                     type="number" 
                     value={newExam.totalMarks}
                     onChange={(e) => setNewExam(prev => ({ ...prev, totalMarks: parseInt(e.target.value) }))}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-4 focus:ring-blue-100 focus:border-blue-600 font-bold transition-all"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-gray-400 uppercase tracking-widest">Schedule Time (Optional)</label>
+                  <input 
+                    type="datetime-local" 
+                    onChange={(e) => setNewExam(prev => ({ ...prev, scheduledTime: new Date(e.target.value).getTime() }))}
                     className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-4 focus:ring-blue-100 focus:border-blue-600 font-bold transition-all"
                   />
                 </div>
@@ -692,7 +714,7 @@ export const InstantExam: React.FC<InstantExamProps> = ({ user, onStartExam }) =
                 <div className="w-20 h-20 bg-gray-50 text-gray-300 rounded-full flex items-center justify-center mx-auto mb-6">
                   <Clock className="w-10 h-10" />
                 </div>
-                <h3 className="text-xl font-bold text-gray-900">No Instant Exams Available</h3>
+                <h3 className="text-xl font-bold text-gray-900">Exam not Available now</h3>
                 <p className="text-gray-400 font-medium mt-2">Check back later for new practice tests.</p>
               </div>
             ) : (

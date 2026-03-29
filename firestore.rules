@@ -1,40 +1,127 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: hsk_banks
+// Document ID: examId (UUID)
+// Fields:
+//   - id: string (required)
+//   - name: string (required)
+//   - level: number (optional)
+//   - duration: number (required)
+//   - sectionDurations: map (required)
+//   - totalMarks: number (required)
+//   - questions: list (required)
+//   - type: string (optional, enum: ['mock', 'practice', 'real'])
+//   - createdBy: string (optional)
+//   - createdAt: number (optional)
+//
+// Collection: results
+// Document ID: resultId (UUID)
+// Fields:
+//   - id: string (required)
+//   - userId: string (required)
+//   - examId: string (required)
+//   - examName: string (required)
+//   - score: number (required)
+//   - passed: boolean (required)
+//   - date: number (required)
+//   - answers: map (optional)
+//   - feedback: map (optional)
+//
+// Collection: users
+// Document ID: userId (UID)
+// Fields:
+//   - userId: string (required)
+//   - email: string (required)
+//   - name: string (optional)
+//   - isAdmin: boolean (required)
+//   - createdAt: number (required)
+//
+// ===============================================================
+
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
+
+    // ===============================================================
     // Helper Functions
+    // ===============================================================
+
     function isAuthenticated() {
       return request.auth != null;
     }
-    
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
     function isAdmin() {
-      return isAuthenticated() && (
-        request.auth.token.email == "mdtafim77889@gmail.com" ||
-        (exists(/databases/$(database)/documents/settings/admin) && 
-         request.auth.token.email == get(/databases/$(database)/documents/settings/admin).data.email)
-      );
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true ||
+          (request.auth.token.email == "mdtafim77889@gmail.com" && request.auth.token.email_verified == true));
     }
 
-    // HSK Exams Collection
-    match /hsk_exams/{examId} {
-      // Anyone authenticated can read mock exams
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidExam(data) {
+      return data.id is string &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
+             data.duration is number && data.duration > 0 &&
+             data.questions is list && data.questions.size() > 0 && data.questions.size() <= 200;
+    }
+
+    function isValidResult(data) {
+      return data.id is string &&
+             data.userId == request.auth.uid &&
+             data.examId is string &&
+             data.score is number &&
+             data.passed is bool &&
+             data.date is number;
+    }
+
+    function isValidUser(data) {
+      return data.userId is string &&
+             data.email is string &&
+             data.isAdmin is bool &&
+             data.createdAt is number;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /hsk_banks/{examId} {
       allow read: if isAuthenticated();
-      
-      // Only admins can create, update, or delete exams
-      allow create, update, delete: if isAdmin();
+      allow create, update, delete: if isAdmin() && isValidExam(request.resource.data);
     }
 
-    // Settings Collection
-    match /settings/{allPaths=**} {
-      allow read: if true;
-      allow write: if isAdmin();
-    }
-
-    // User Results Collection (for future use if needed)
     match /results/{resultId} {
-      allow read: if isAuthenticated() && (request.auth.uid == resource.data.userId || isAdmin());
-      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.userId;
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && isValidResult(request.resource.data);
       allow update, delete: if isAdmin();
+    }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (isOwner(userId) || isAdmin());
+      allow create: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data) && (request.resource.data.isAdmin == false || isAdmin());
+      allow update: if isAuthenticated() && (isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.isAdmin == resource.data.isAdmin) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /analytics/global {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
     }
   }
 }

@@ -81,7 +81,7 @@ export const ExamInterface: React.FC<ExamInterfaceProps> = ({ exam, user, onClos
 
     const examResult: ExamResult = {
       id: `res-${Date.now()}`,
-      userId: user.uid,
+      userId: user?.uid || '',
       examId: exam.id,
       examName: exam.name,
       level: exam.level,
@@ -98,7 +98,7 @@ export const ExamInterface: React.FC<ExamInterfaceProps> = ({ exam, user, onClos
     setResult(examResult);
     setIsSubmitted(true);
     setIsEvaluating(false);
-  }, [answers, exam, isSubmitted, user.uid]);
+  }, [answers, exam, isSubmitted, user?.uid]);
 
   useEffect(() => {
     // Auto-play audio for listening questions if not played yet

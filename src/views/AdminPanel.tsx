@@ -1,65 +1,66 @@
-import React, { useState } from 'react';
-import { User } from 'firebase/auth';
-import { db } from '../firebase';
-import { collection, addDoc, serverTimestamp, doc, getDoc, setDoc, getDocFromServer } from 'firebase/firestore';
-import { auth } from '../firebase';
-import { Exam, Question, HSKLevel, SectionType, QuestionType } from '../types';
-import { Plus, Trash2, Upload, Music, Image as ImageIcon, Save, CheckCircle2, AlertCircle, Settings } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Exam, Question, HSKLevel, SectionType, QuestionType, LocalUser } from '../types';
+import { Plus, Trash2, Upload, Music, Image as ImageIcon, Save, CheckCircle2, AlertCircle, Settings, List, FileText, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { saveHSKBank, getHSKBanks, deleteHSKBank, saveUserProfile } from '../db';
+import { auth } from '../firebase';
+import { ConfirmationModal } from '../components/ConfirmationModal';
+import { ADMIN_EMAILS } from '../constants';
 
 interface AdminPanelProps {
-  user: User;
-}
-
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-    },
-    operationType,
-    path
-  };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  user: LocalUser;
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
-  const [activeAdminTab, setActiveAdminTab] = useState<'create' | 'settings'>('create');
-  const [adminEmail, setAdminEmail] = useState('mdtafim77889@gmail.com');
+  const [activeAdminTab, setActiveAdminTab] = useState<'create' | 'manage' | 'settings'>('create');
+  const [adminEmail, setAdminEmail] = useState(user.email);
   const [examName, setExamName] = useState('');
 
-  React.useEffect(() => {
-    const fetchAdminEmail = async () => {
-      const path = 'settings/admin';
-      try {
-        const adminDoc = await getDocFromServer(doc(db, path));
-        if (adminDoc.exists()) {
-          setAdminEmail(adminDoc.data().email);
-        }
-      } catch (error) {
-        handleFirestoreError(error, OperationType.GET, path);
-      }
-    };
-    fetchAdminEmail();
-  }, []);
   const [level, setLevel] = useState<HSKLevel>(1);
   const [duration, setDuration] = useState(40);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDrafting, setIsDrafting] = useState(false);
   const [status, setStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
+  const [existingExams, setExistingExams] = useState<Exam[]>([]);
+  
+  // Deletion Modal State
+  const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; examId: string | null }>({
+    isOpen: false,
+    examId: null,
+  });
+
+  // Passage Grouping State
+  const [passages, setPassages] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (activeAdminTab === 'manage') {
+      loadExams();
+    }
+  }, [activeAdminTab]);
+
+  const loadExams = async () => {
+    try {
+      const exams = await getHSKBanks();
+      setExistingExams(exams);
+    } catch (error) {
+      console.error('Error loading exams:', error);
+    }
+  };
+
+  const handleDeleteExam = async () => {
+    if (!deleteModal.examId) return;
+    
+    try {
+      await deleteHSKBank(deleteModal.examId);
+      setStatus({ type: 'success', message: 'Exam deleted successfully!' });
+      setDeleteModal({ isOpen: false, examId: null });
+      loadExams();
+    } catch (error) {
+      console.error('Error deleting exam:', error);
+      setStatus({ type: 'error', message: 'Failed to delete exam.' });
+    }
+  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, questionIndex: number, type: 'audio' | 'image' | 'optionImage', optionIndex?: number) => {
     const file = e.target.files?.[0];
@@ -138,18 +139,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
     }
   };
 
-  const saveExam = async () => {
+  const saveExam = async (isDraft: boolean = false) => {
     if (!examName || questions.length === 0) {
       setStatus({ type: 'error', message: 'Please provide an exam name and at least one question.' });
       return;
     }
 
-    setIsSaving(true);
+    if (isDraft) setIsDrafting(true);
+    else setIsSaving(true);
     setStatus(null);
 
     try {
-      const examData: Partial<Exam> = {
-        name: examName,
+      const examData: Exam = {
+        id: crypto.randomUUID(),
+        name: examName + (isDraft ? ' (Draft)' : ''),
         level,
         duration,
         sectionDurations: {
@@ -158,23 +161,34 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
           Writing: level <= 2 ? 0 : Math.floor(duration * 0.3),
         },
         totalMarks: questions.reduce((acc, q) => acc + q.maxMarks, 0),
-        questions,
-        createdBy: user.uid,
+        questions: questions.map(q => {
+          // Apply passage text if passageId exists
+          if (q.passageId && passages[q.passageId]) {
+            return { ...q, text: passages[q.passageId] };
+          }
+          return q;
+        }),
+        type: 'mock',
+        createdBy: auth.currentUser?.uid || user.userId,
+        isDraft
       };
 
-      await addDoc(collection(db, 'hsk_exams'), {
-        ...examData,
-        createdAt: serverTimestamp(),
-      });
+      await saveHSKBank(examData);
 
-      setStatus({ type: 'success', message: 'Exam saved successfully!' });
-      setExamName('');
-      setQuestions([]);
+      setStatus({ type: 'success', message: isDraft ? 'Draft saved successfully!' : 'Exam published successfully!' });
+      
+      if (!isDraft) {
+        setExamName('');
+        setQuestions([]);
+        setPassages({});
+      }
+      loadExams();
     } catch (error) {
       console.error('Error saving exam:', error);
       setStatus({ type: 'error', message: 'Failed to save exam. Please try again.' });
     } finally {
       setIsSaving(false);
+      setIsDrafting(false);
     }
   };
 
@@ -196,6 +210,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
               Create Exam
             </button>
             <button
+              onClick={() => setActiveAdminTab('manage')}
+              className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${
+                activeAdminTab === 'manage' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'
+              }`}
+            >
+              <List className="w-4 h-4" />
+              Manage
+            </button>
+            <button
               onClick={() => setActiveAdminTab('settings')}
               className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${
                 activeAdminTab === 'settings' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'
@@ -206,20 +229,36 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
             </button>
           </div>
           {activeAdminTab === 'create' && (
-            <button
-              onClick={saveExam}
-              disabled={isSaving}
-              className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-blue-700 transition-all disabled:opacity-50 shadow-lg shadow-blue-900/20"
-            >
-              {isSaving ? (
-                <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}>
+            <div className="flex gap-3">
+              <button
+                onClick={() => saveExam(true)}
+                disabled={isSaving || isDrafting}
+                className="flex items-center gap-2 bg-white border-2 border-blue-600 text-blue-600 px-6 py-3 rounded-xl font-bold hover:bg-blue-50 transition-all disabled:opacity-50 shadow-lg shadow-blue-900/5"
+              >
+                {isDrafting ? (
+                  <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}>
+                    <FileText className="w-5 h-5" />
+                  </motion.div>
+                ) : (
+                  <FileText className="w-5 h-5" />
+                )}
+                Save Draft
+              </button>
+              <button
+                onClick={() => saveExam(false)}
+                disabled={isSaving || isDrafting}
+                className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-blue-700 transition-all disabled:opacity-50 shadow-lg shadow-blue-900/20"
+              >
+                {isSaving ? (
+                  <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}>
+                    <Save className="w-5 h-5" />
+                  </motion.div>
+                ) : (
                   <Save className="w-5 h-5" />
-                </motion.div>
-              ) : (
-                <Save className="w-5 h-5" />
-              )}
-              Save Exam
-            </button>
+                )}
+                Publish Exam
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -235,37 +274,139 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
           >
             <div className="space-y-4">
               <h2 className="text-xl font-bold text-gray-900">Admin Settings</h2>
-              <div className="space-y-2">
-                <label className="text-sm font-bold text-gray-700 uppercase tracking-wider">Admin Email</label>
-                <div className="flex gap-4">
-                  <input
-                    type="email"
-                    value={adminEmail}
-                    onChange={(e) => setAdminEmail(e.target.value)}
-                    className="flex-1 px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none"
-                  />
-                  <button
-                    onClick={async () => {
-                      setIsSaving(true);
-                      try {
-                        await setDoc(doc(db, 'settings', 'admin'), { email: adminEmail });
-                        setStatus({ type: 'success', message: 'Admin email updated successfully!' });
-                      } catch (error) {
-                        setStatus({ type: 'error', message: 'Failed to update admin email.' });
-                      } finally {
-                        setIsSaving(false);
-                      }
-                    }}
-                    className="px-6 py-3 bg-gray-900 text-white rounded-xl font-bold hover:bg-black transition-all"
-                  >
-                    Update
-                  </button>
+              <div className="space-y-6">
+                <div className="p-6 bg-blue-50 rounded-2xl border border-blue-100 flex items-center gap-4">
+                  <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center text-white">
+                    <ShieldCheck className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-blue-900">Current Admin</h3>
+                    <p className="text-sm text-blue-700">{user.email}</p>
+                  </div>
                 </div>
-                <p className="text-xs text-gray-400 italic">Warning: Changing this email will change who can access this admin panel.</p>
+
+                <div className="space-y-4">
+                  <h3 className="font-bold text-gray-900">Platform Configuration</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
+                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1">Total Exams</span>
+                      <span className="text-2xl font-black text-gray-900">{existingExams.length}</span>
+                    </div>
+                    <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
+                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1">Admin Status</span>
+                      <span className="text-sm font-bold text-green-600 flex items-center gap-1">
+                        <CheckCircle2 className="w-4 h-4" /> Verified Administrator
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-6 border-t border-gray-100">
+                  <h3 className="font-bold text-gray-900 mb-4">Danger Zone</h3>
+                  <div className="p-6 bg-red-50 rounded-2xl border border-red-100 flex items-center justify-between">
+                    <div>
+                      <h4 className="font-bold text-red-900">Reset Platform Data</h4>
+                      <p className="text-sm text-red-700">This will not delete exams, but clear local caches.</p>
+                    </div>
+                    <button 
+                      onClick={() => {
+                        localStorage.clear();
+                        sessionStorage.clear();
+                        window.location.reload();
+                      }}
+                      className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-bold hover:bg-red-700 transition-all"
+                    >
+                      Reset Cache
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </motion.div>
-        ) : (
+        ) : activeAdminTab === 'manage' ? (
+          <motion.div
+            key="manage"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="space-y-6"
+          >
+            <AnimatePresence>
+              {status && (
+                <motion.div
+                  initial={{ opacity: 0, y: -20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className={`p-4 rounded-xl flex items-center gap-3 ${
+                    status.type === 'success' ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-red-100 text-red-700 border border-red-200'
+                  }`}
+                >
+                  {status.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+                  <span className="font-medium">{status.message}</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-gray-50 border-bottom border-gray-100">
+                      <th className="px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-widest">Exam Name</th>
+                      <th className="px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-widest">Level</th>
+                      <th className="px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-widest">Questions</th>
+                      <th className="px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-widest text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {existingExams.length > 0 ? (
+                      existingExams.map((exam) => (
+                        <tr key={exam.id} className="hover:bg-gray-50 transition-all">
+                          <td className="px-6 py-4">
+                            <span className="font-bold text-gray-900">{exam.name}</span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-xs font-black uppercase tracking-widest">
+                              Level {exam.level}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="text-sm font-bold text-gray-600">{exam.questions?.length || 0} Items</span>
+                          </td>
+                  <td className="px-6 py-4 text-right">
+                    <button
+                      onClick={() => setDeleteModal({ isOpen: true, examId: exam.id })}
+                      className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                      title="Delete Exam"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={4} className="px-6 py-12 text-center text-gray-400 font-medium">
+                  No exams created yet.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <ConfirmationModal
+      isOpen={deleteModal.isOpen}
+      title="Delete Exam?"
+      message="Are you sure you want to delete this exam? This action will remove it for all users and cannot be undone."
+      confirmLabel="Delete Exam"
+      onConfirm={handleDeleteExam}
+      onCancel={() => setDeleteModal({ isOpen: false, examId: null })}
+      isDestructive={true}
+    />
+  </motion.div>
+) : (
           <motion.div
             key="create"
             initial={{ opacity: 0, y: 20 }}
@@ -328,6 +469,38 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
                 </div>
               </div>
             </div>
+
+            {/* Passage Management for HSK 5/6 */}
+            {(level >= 5 && questions.some(q => q.section === 'Reading' && (q.partType === 'Part III' || q.partType === 'Part IV'))) && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                className="p-6 bg-blue-50 rounded-3xl border border-blue-100 space-y-4"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white">
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-blue-900">Passage Management</h4>
+                    <p className="text-xs text-blue-700">Group questions by Passage ID to share the same text.</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {Array.from(new Set(questions.filter(q => q.passageId).map(q => q.passageId))).map(pid => (
+                    <div key={pid} className="space-y-2">
+                      <label className="text-[10px] font-black text-blue-400 uppercase tracking-widest">Passage {pid}</label>
+                      <textarea
+                        value={passages[pid as string] || ''}
+                        onChange={(e) => setPassages(prev => ({ ...prev, [pid as string]: e.target.value }))}
+                        placeholder="Enter passage text here..."
+                        className="w-full h-32 p-4 bg-white border border-blue-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
 
             <div className="space-y-6">
               <div className="flex items-center justify-between">
